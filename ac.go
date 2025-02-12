@@ -7,12 +7,14 @@ import (
 
 type Result struct {
 	Str    string
-	offset uint16
+	Id     uint64
+	Offset uint16
 	End    uint16
 }
 
 type values struct {
 	strlen int
+	id     uint64
 	str    string
 	cs     bool
 }
@@ -37,18 +39,18 @@ type AcAlgorithm struct {
 }
 
 // case sensitive
-func (a *AcAlgorithm) AddCS(v string) {
+func (a *AcAlgorithm) AddCS(id uint64, v string) {
 	cs := true
-	a.add(v, cs)
+	a.add(v, id, cs)
 }
 
 // case insensitive
-func (a *AcAlgorithm) AddCI(v string) {
+func (a *AcAlgorithm) AddCI(id uint64, v string) {
 	cs := false
-	a.add(v, cs)
+	a.add(v, id, cs)
 }
 
-func (a *AcAlgorithm) add(str string, cs bool) {
+func (a *AcAlgorithm) add(str string, id uint64, cs bool) {
 	cur := a.root
 	for _, c := range str {
 		if _, ok := cur.next[c]; !ok {
@@ -57,7 +59,7 @@ func (a *AcAlgorithm) add(str string, cs bool) {
 		}
 		cur = cur.next[c]
 	}
-	r := values{str: str, cs: cs, strlen: len(str)}
+	r := values{str: str, cs: cs, strlen: len(str), id: id}
 	cur.values = append(cur.values, r)
 	a.count++
 }
@@ -130,10 +132,10 @@ func (a *AcAlgorithm) SearchResult(str string) []Result {
 				offset := k - v.strlen + 1
 				if v.cs {
 					if memcmp(v.str, str[offset:], v.strlen) {
-						r = append(r, Result{offset: uint16(offset), Str: v.str, End: uint16(k)})
+						r = append(r, Result{Id: v.id, Offset: uint16(offset), Str: v.str, End: uint16(k)})
 					}
 				} else {
-					r = append(r, Result{offset: uint16(offset), Str: v.str, End: uint16(k)})
+					r = append(r, Result{Id: v.id, Offset: uint16(offset), Str: v.str, End: uint16(k)})
 				}
 			}
 		}

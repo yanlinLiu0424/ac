@@ -7,9 +7,9 @@ import (
 func TestAcCs(t *testing.T) {
 	v := "abcdefghjiklmnopqrstuvwxyz"
 	ac := NewAcAlgorithm()
-	ac.AddCS("abcd")
-	ac.AddCS("bcde")
-	ac.AddCS("bcd")
+	ac.AddCS(0, "abcd")
+	ac.AddCS(1, "bcde")
+	ac.AddCS(2, "bcd")
 	ac.Build()
 	r := ac.Search(v)
 	if len(r) != 3 {
@@ -19,9 +19,9 @@ func TestAcCs(t *testing.T) {
 func TestAcCi(t *testing.T) {
 	v := "ABCDEfghjiklmnopqrstuvwxyz"
 	ac := NewAcAlgorithm()
-	ac.AddCI("abcd")
-	ac.AddCI("bcde")
-	ac.AddCI("bcd")
+	ac.AddCI(0, "abcd")
+	ac.AddCI(1, "bcde")
+	ac.AddCI(2, "bcd")
 	ac.Build()
 	r := ac.Search(v)
 	if len(r) != 3 {
@@ -30,11 +30,11 @@ func TestAcCi(t *testing.T) {
 }
 
 func TestResult(t *testing.T) {
-	v := "ABCDEfghjiklmnopqrstuvwxyz"
+	v := "sdfABCDEfghjiklmnopqrstuvwxyz"
 	ac := NewAcAlgorithm()
-	ac.AddCI("abcd")
-	ac.AddCI("bcde")
-	ac.AddCI("bcd")
+	ac.AddCI(0, "abcd")
+	ac.AddCI(1, "bcde")
+	ac.AddCI(2, "bcd")
 	ac.Build()
 	r := ac.SearchResult(v)
 	if len(r) != 3 {
