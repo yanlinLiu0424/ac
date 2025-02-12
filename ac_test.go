@@ -22,6 +22,7 @@ func TestAcCi(t *testing.T) {
 	ac.AddCI(0, "abcd")
 	ac.AddCI(1, "bcde")
 	ac.AddCI(2, "bcd")
+	ac.AddCI(3, "bcd")
 	ac.Build()
 	r := ac.Search(v)
 	if len(r) != 3 {
