@@ -1,12 +1,33 @@
 package ac
 
 import (
+	"fmt"
 	"math/rand"
 	"testing"
 )
 
+func TestAhoCorasick_Search_CaseInsensitive1(t *testing.T) {
+	v := []byte("sdfABCDEfghjiklmnopqrstuvwxyz")
+	ac := NewAhoCorasick()
+	patterns := []Pattern{
+		{Str: "aBcd", ID: 30, Flags: Caseless},
+	}
+	for _, p := range patterns {
+		if err := ac.AddPattern(p); err != nil {
+			t.Fatalf("AddPattern(%+v) failed: %v", p, err)
+		}
+	}
+	ac.Build()
+	m := MatchedHandler(func(id uint, from, to uint64) error {
+		fmt.Println("Matched ID:", id, "From:", from, "To:", to)
+		return nil
+	})
+	ac.Scan(v, m)
+
+}
+
 func TestAhoCorasick_Search_CaseInsensitive(t *testing.T) {
-	v := "sdfABCDEfghjiklmnopqrstuvwxyz"
+	v := []byte("sdfABCDEfghjiklmnopqrstuvwxyz")
 	ac := NewAhoCorasick()
 	patterns := []Pattern{
 		{Str: "abcd", ID: 0, Flags: Caseless},
@@ -27,7 +48,7 @@ func TestAhoCorasick_Search_CaseInsensitive(t *testing.T) {
 }
 
 func TestAhoCorasick_Search_CaseSensitive(t *testing.T) {
-	v := "sdfABCDEfghjiklmnopqrstuvwxyzabcd"
+	v := []byte("sdfABCDEfghjiklmnopqrstuvwxyzabcd")
 	ac := NewAhoCorasick()
 	// "abcd" should match at the end, "ABCD" should not match if Cs:true
 	patterns := []Pattern{
@@ -48,7 +69,7 @@ func TestAhoCorasick_Search_CaseSensitive(t *testing.T) {
 	}
 
 	// Verify specific IDs if necessary, e.g. check that ID 0 and ID 2 are present
-	foundIDs := make(map[uint64]bool)
+	foundIDs := make(map[uint]bool)
 	for _, id := range r {
 		foundIDs[id] = true
 	}
@@ -81,20 +102,19 @@ func BenchmarkAhoCorasickSearch5000RandomPatterns(b *testing.B) {
 	numPatterns := 5000 // Keeping this at 5000 as per current code
 	patterns := make([]string, numPatterns)
 
-	for i := 0; i < numPatterns; i++ {
+	for i := range numPatterns {
 		// Generate random patterns of length between 5 and 15
 		patternLength := rand.Intn(11) + 5
 		patterns[i] = randomString(patternLength) // Uses randomString from ac_test.go
-		err := ac.AddPattern(Pattern{Str: patterns[i], ID: uint64(i), Flags: Caseless})
+		err := ac.AddPattern(Pattern{Str: patterns[i], ID: uint(i), Flags: Caseless})
 		if err != nil {
 			b.Fatalf("Failed to add pattern %q: %v", patterns[i], err)
 		}
 	}
 	ac.Build()
 
-	// Generate a long text to search in (e.g., 1MB)
 	searchTextLength := 1500
-	searchText := randomString(searchTextLength)
+	searchText := []byte(randomString(searchTextLength))
 
 	b.ResetTimer() // Start timing after setup
 	for i := 0; i < b.N; i++ {

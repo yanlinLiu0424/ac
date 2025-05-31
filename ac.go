@@ -1,9 +1,12 @@
 package ac
 
 import (
-	"strings"
+	"bytes"
 	"unicode"
 )
+
+type MatchedHandler func(id uint, from, to uint64) error
+type matchedPattern func(pos uint64, ps Pattern)
 
 const (
 	SCACFAIL = -1
@@ -18,21 +21,22 @@ const (
 
 type Pattern struct {
 	Str    string
-	ID     uint64 // ID
-	Flags  Flag   // Caseless represents set case-insensitive matching.
-	strlen int    // 字符串長度
+	ID     uint // ID
+	Flags  Flag // Caseless represents set case-insensitive matching.
+	strlen int
 }
 
 type state struct {
-	transitions     [256]int  // 使用陣列儲存轉換
-	failure         int       // 失敗轉移
-	output          []Pattern // 匹配的模式
-	caseInsensitive bool      // 是否區分大小寫
-	isData          bool      // 是否為資料節點
+	transitions     [256]int  // Stores transitions using an array
+	failure         int       // Failure transition
+	output          []Pattern // Matched patterns
+	caseInsensitive bool      // Whether case-insensitive matching is enabled
+	isData          bool      // Whether this is a data node
 }
 
 type AhoCorasick struct {
 	states []state
+	size   int // Size of the automaton
 }
 
 func newState() state {
@@ -43,7 +47,7 @@ func newState() state {
 		caseInsensitive: false,
 		isData:          false,
 	}
-	// 初始化所有轉換為失敗狀態
+
 	for i := range len(state.transitions) {
 		state.transitions[i] = SCACFAIL
 	}
@@ -70,13 +74,13 @@ func (ac *AhoCorasick) AddPattern(p Pattern) error {
 	p.strlen = len(p.Str)
 	ac.states[currentState].output = append(ac.states[currentState].output, p)
 	ac.states[currentState].isData = true
+	ac.size++
 	return nil
 }
 
 func (ac *AhoCorasick) Build() {
 	queue := []int{}
 
-	// 初始化根節點的失敗轉移
 	for _, state := range ac.states[0].transitions {
 		if state != SCACFAIL {
 			ac.states[state].failure = 0
@@ -84,7 +88,6 @@ func (ac *AhoCorasick) Build() {
 		}
 	}
 
-	// BFS 構建失敗轉移
 	for len(queue) > 0 {
 		currentState := queue[0]
 		queue = queue[1:]
@@ -95,7 +98,6 @@ func (ac *AhoCorasick) Build() {
 			}
 			queue = append(queue, nextState)
 
-			// 計算失敗轉移
 			failState := ac.states[currentState].failure
 			for failState != SCACFAIL && ac.states[failState].transitions[char] == SCACFAIL {
 				failState = ac.states[failState].failure
@@ -107,7 +109,6 @@ func (ac *AhoCorasick) Build() {
 				ac.states[nextState].failure = 0
 			}
 
-			// 合併輸出
 			if ac.states[nextState].isData {
 				ac.states[nextState].output = append(ac.states[nextState].output, ac.states[ac.states[nextState].failure].output...)
 			}
@@ -116,12 +117,11 @@ func (ac *AhoCorasick) Build() {
 	}
 }
 
-func (ac *AhoCorasick) Search(text string) []uint64 {
+func (ac *AhoCorasick) searchPatterns(text []byte, matched matchedPattern) {
 	currentState := 0
-	matches := []uint64{}
-	dup := map[uint64]struct{}{}
+	record := map[uint]struct{}{}
 	for k, char := range text {
-		char = unicode.ToLower(char)
+		char = byte(unicode.ToLower(rune(char)))
 		for currentState != SCACFAIL && ac.states[currentState].transitions[char] == SCACFAIL {
 			currentState = ac.states[currentState].failure
 		}
@@ -130,40 +130,54 @@ func (ac *AhoCorasick) Search(text string) []uint64 {
 			currentState = 0
 			continue
 		}
-
-		// 進入下一狀態
 		currentState = ac.states[currentState].transitions[char]
 		if ac.states[currentState].isData {
-			for _, pattern := range ac.states[currentState].output {
-				offset := k - pattern.strlen + 1
-				idMatched(&matches, pattern, dup, text[offset:])
-
+			for _, p := range ac.states[currentState].output {
+				if p.Flags&SingleMatch > 0 && isExisted(record, p.ID) {
+					continue
+				}
+				if p.Flags&Caseless > 0 {
+					record[p.ID] = struct{}{}
+					matched(uint64(k+1), p)
+				} else {
+					if memcmp([]byte(p.Str), text, p.strlen) {
+						record[p.ID] = struct{}{}
+						matched(uint64(k+1), p)
+					}
+				}
 			}
 		}
 	}
+
+}
+
+func (ac *AhoCorasick) Search(text []byte) []uint {
+	matches := make([]uint, 0, ac.size)
+	h := matchedPattern(func(pos uint64, ps Pattern) {
+		matches = append(matches, ps.ID)
+	})
+	ac.searchPatterns(text, h)
 	return matches
 }
-
-func idMatched(state *[]uint64, p Pattern, dup map[uint64]struct{}, buffer string) {
-	if p.Flags&SingleMatch > 0 {
-		if _, ok := dup[p.ID]; ok {
+func (ac *AhoCorasick) Scan(text []byte, m MatchedHandler) {
+	h := matchedPattern(func(pos uint64, ps Pattern) {
+		err := m(ps.ID, 0, pos)
+		if err != nil {
 			return
 		}
-	}
-	if p.Flags&Caseless > 0 {
-		*state = append(*state, p.ID)
-		dup[p.ID] = struct{}{}
-	} else {
-		if memcmp(p.Str, buffer, p.strlen) {
-			*state = append(*state, p.ID)
-			dup[p.ID] = struct{}{}
-		}
-	}
+	})
+	ac.searchPatterns(text, h)
+
 }
 
-func memcmp(a, b string, l int) bool {
+func isExisted(m map[uint]struct{}, id uint) bool {
+	_, exists := m[id]
+	return exists
+}
+
+func memcmp(a, b []byte, l int) bool {
 	if l > len(b) || l > len(a) {
 		return false
 	}
-	return strings.Compare(a[:l], b[:l]) == 0
+	return bytes.Equal(a[:l], b[:l])
 }
