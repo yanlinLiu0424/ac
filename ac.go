@@ -9,7 +9,7 @@ type MatchedHandler func(id uint, from, to uint64) error
 type matchedPattern func(pos uint64, ps Pattern)
 
 const (
-	SCACFAIL = -1
+	fail = -1
 )
 
 type Flag uint
@@ -42,14 +42,14 @@ type AhoCorasick struct {
 func newState() state {
 	state := state{
 		transitions:     [256]int{},
-		failure:         SCACFAIL,
+		failure:         fail,
 		output:          []Pattern{},
 		caseInsensitive: false,
 		isData:          false,
 	}
 
 	for i := range len(state.transitions) {
-		state.transitions[i] = SCACFAIL
+		state.transitions[i] = fail
 	}
 	return state
 }
@@ -64,7 +64,7 @@ func (ac *AhoCorasick) AddPattern(p Pattern) error {
 	currentState := 0
 	for _, char := range p.Str {
 		char = unicode.ToLower(char)
-		if ac.states[currentState].transitions[char] == SCACFAIL {
+		if ac.states[currentState].transitions[char] == fail {
 			newstate := len(ac.states)
 			ac.states = append(ac.states, newState())
 			ac.states[currentState].transitions[char] = newstate
@@ -82,7 +82,7 @@ func (ac *AhoCorasick) Build() {
 	queue := []int{}
 
 	for _, state := range ac.states[0].transitions {
-		if state != SCACFAIL {
+		if state != fail {
 			ac.states[state].failure = 0
 			queue = append(queue, state)
 		}
@@ -93,17 +93,17 @@ func (ac *AhoCorasick) Build() {
 		queue = queue[1:]
 
 		for char, nextState := range ac.states[currentState].transitions {
-			if nextState == SCACFAIL {
+			if nextState == fail {
 				continue
 			}
 			queue = append(queue, nextState)
 
 			failState := ac.states[currentState].failure
-			for failState != SCACFAIL && ac.states[failState].transitions[char] == SCACFAIL {
+			for failState != fail && ac.states[failState].transitions[char] == fail {
 				failState = ac.states[failState].failure
 			}
 
-			if failState != SCACFAIL {
+			if failState != fail {
 				ac.states[nextState].failure = ac.states[failState].transitions[char]
 			} else {
 				ac.states[nextState].failure = 0
@@ -122,11 +122,11 @@ func (ac *AhoCorasick) searchPatterns(text []byte, matched matchedPattern) {
 	record := map[uint]struct{}{}
 	for k, char := range text {
 		char = byte(unicode.ToLower(rune(char)))
-		for currentState != SCACFAIL && ac.states[currentState].transitions[char] == SCACFAIL {
+		for currentState != fail && ac.states[currentState].transitions[char] == fail {
 			currentState = ac.states[currentState].failure
 		}
 
-		if currentState == SCACFAIL {
+		if currentState == fail {
 			currentState = 0
 			continue
 		}
@@ -167,7 +167,6 @@ func (ac *AhoCorasick) Scan(text []byte, m MatchedHandler) {
 		}
 	})
 	ac.searchPatterns(text, h)
-
 }
 
 func isExisted(m map[uint]struct{}, id uint) bool {
