@@ -119,6 +119,7 @@ func (ac *AhoCorasick) Build() {
 
 func (ac *AhoCorasick) searchPatterns(text []byte, matched matchedPattern) {
 	currentState := 0
+
 	record := map[uint]struct{}{}
 	for k, char := range text {
 		char = byte(unicode.ToLower(rune(char)))
@@ -140,7 +141,7 @@ func (ac *AhoCorasick) searchPatterns(text []byte, matched matchedPattern) {
 					record[p.ID] = struct{}{}
 					matched(uint64(k+1), p)
 				} else {
-					if memcmp([]byte(p.Str), text, p.strlen) {
+					if memcmp([]byte(p.Str), text[k-p.strlen+1:], p.strlen) {
 						record[p.ID] = struct{}{}
 						matched(uint64(k+1), p)
 					}

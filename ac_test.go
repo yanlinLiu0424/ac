@@ -10,7 +10,7 @@ func TestAhoCorasick_Search_CaseInsensitive1(t *testing.T) {
 	v := []byte("sdfABCDEfghjiklmnopqrstuvwxyz")
 	ac := NewAhoCorasick()
 	patterns := []Pattern{
-		{Str: "aBcd", ID: 30, Flags: Caseless},
+		{Str: "aBcd", ID: 30},
 	}
 	for _, p := range patterns {
 		if err := ac.AddPattern(p); err != nil {
@@ -30,9 +30,11 @@ func TestAhoCorasick_Search_CaseInsensitive(t *testing.T) {
 	v := []byte("sdfABCDEfghjiklmnopqrstuvwxyz")
 	ac := NewAhoCorasick()
 	patterns := []Pattern{
+		{Str: "S", ID: 4},
 		{Str: "abcd", ID: 0, Flags: Caseless},
 		{Str: "bcde", ID: 1, Flags: Caseless},
 		{Str: "bcd", ID: 2, Flags: Caseless},
+		{Str: "uvw", ID: 3},
 	}
 	for _, p := range patterns {
 		if err := ac.AddPattern(p); err != nil {
@@ -42,8 +44,8 @@ func TestAhoCorasick_Search_CaseInsensitive(t *testing.T) {
 	ac.Build()
 
 	r := ac.Search(v)
-	if len(r) != 3 {
-		t.Errorf("Expected 3 matches, got %d for text %q", len(r), v)
+	if len(r) != 4 {
+		t.Errorf("Expected 4 matches, got %d for text %q", len(r), v)
 	}
 }
 
