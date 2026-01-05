@@ -5,7 +5,7 @@ Package `ac` implements the Aho-Corasick string searching algorithm in Go. It is
 ## Installation
 
 ```bash
-go get github.com/atop/ac
+go get github.com/yanlinLiu0424/ac
 ```
 
 ## Features
