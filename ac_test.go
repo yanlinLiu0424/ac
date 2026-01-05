@@ -1,6 +1,7 @@
 package ac
 
 import (
+	"bytes"
 	"fmt"
 	"math/rand"
 	"testing"
@@ -86,6 +87,51 @@ func TestAhoCorasick_Search_CaseSensitive(t *testing.T) {
 	}
 }
 
+func TestAhoCorasick_1000Patterns(t *testing.T) {
+	ac := NewAhoCorasick()
+	expectedIDs := make(map[uint]bool)
+	var sbText bytes.Buffer
+
+	// Generate 100 patterns and build the text
+	for i := 0; i < 1000; i++ {
+		// Create a unique pattern string
+		patStr := fmt.Sprintf("Pattern%d-%s", i, randomString(4))
+
+		// Add some noise before the pattern in the text
+		sbText.WriteString(randomString(3))
+		sbText.WriteString(patStr)
+
+		p := Pattern{
+			Str:   patStr,
+			ID:    uint(i),
+			Flags: Caseless,
+		}
+		if err := ac.AddPattern(p); err != nil {
+			t.Fatalf("AddPattern failed for %s: %v", patStr, err)
+		}
+		expectedIDs[uint(i)] = true
+	}
+
+	// Add some trailing noise
+	sbText.WriteString(randomString(5))
+
+	ac.Build()
+
+	text := sbText.Bytes()
+	matches := ac.Search(text)
+
+	foundIDs := make(map[uint]bool)
+	for _, id := range matches {
+		foundIDs[id] = true
+	}
+
+	for id := range expectedIDs {
+		if !foundIDs[id] {
+			t.Errorf("Expected to find pattern ID %d", id)
+		}
+	}
+}
+
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 func randomString(n int) string {
@@ -96,9 +142,6 @@ func randomString(n int) string {
 	return string(sb)
 }
 
-// Renamed to reflect the actual number of patterns if numPatterns remains 5000
-// Or, change numPatterns to 500 to match the original name.
-// For this example, I'll assume you want to test 5000 and rename the function.
 func BenchmarkAhoCorasickSearch5000RandomPatterns(b *testing.B) {
 	ac := NewAhoCorasick()
 	numPatterns := 5000 // Keeping this at 5000 as per current code
