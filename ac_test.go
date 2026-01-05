@@ -166,3 +166,26 @@ func BenchmarkAhoCorasickSearch5000RandomPatterns(b *testing.B) {
 		_ = ac.Search(searchText)
 	}
 }
+
+func BenchmarkAhoCorasickSearch5000FixedPatterns(b *testing.B) {
+	ac := NewAhoCorasick()
+	numPatterns := 50000
+
+	for i := 0; i < numPatterns; i++ {
+		s := fmt.Sprintf("FixedString%d", i)
+		_ = ac.AddPattern(Pattern{Str: s, ID: uint(i), Flags: Caseless})
+	}
+	ac.Build()
+
+	// Create a text that contains patterns
+	var buffer bytes.Buffer
+	for i := 0; i < 200; i++ {
+		buffer.WriteString(fmt.Sprintf("noise_FixedString%d_data ", i%numPatterns))
+	}
+	text := buffer.Bytes()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = ac.Search(text)
+	}
+}

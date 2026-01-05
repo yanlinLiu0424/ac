@@ -132,7 +132,6 @@ func (ac *AhoCorasick) searchPatterns(text []byte, matched matchedPattern) {
 	// A bool is 1 byte, so maxID can be up to ~16M.
 	const maxSliceSize = 16 * 1024 * 1024
 	useSlice := (ac.maxID + 1) <= maxSliceSize
-
 	if useSlice {
 		// Fast path: use a bitset for duplicate checking.
 		var record []uint64
