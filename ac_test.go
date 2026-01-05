@@ -11,7 +11,10 @@ func TestAhoCorasick_Search_CaseInsensitive1(t *testing.T) {
 	v := []byte("sdfABCDEfghjiklmnopqrstuvwxyz")
 	ac := NewAhoCorasick()
 	patterns := []Pattern{
-		{Str: "aBcd", ID: 30},
+		{Str: "aBcd", ID: 30, Flags: Caseless},
+		{Str: "mno", ID: 31, Flags: SingleMatch},
+		{Str: "uv", ID: 31, Flags: SingleMatch},
+		{Str: "sdffd", ID: 32, Flags: SingleMatch},
 	}
 	for _, p := range patterns {
 		if err := ac.AddPattern(p); err != nil {
@@ -19,12 +22,42 @@ func TestAhoCorasick_Search_CaseInsensitive1(t *testing.T) {
 		}
 	}
 	ac.Build()
+	r := make(map[uint]struct{})
 	m := MatchedHandler(func(id uint, from, to uint64) error {
-		fmt.Println("Matched ID:", id, "From:", from, "To:", to)
+		//fmt.Println("Matched ID:", id, "From:", from, "To:", to)
+		r[id] = struct{}{}
 		return nil
 	})
 	ac.Scan(v, m)
+	if len(r) != 2 {
+		t.Errorf("Expected 2 matches, got %d for text %q", len(r), v)
+	}
+}
 
+func TestAhoCorasick_Search_CaseInsensitive2(t *testing.T) {
+	v := []byte("sdfABCDEfghjiklmnopqrstuvwxyz")
+	ac := NewAhoCorasick()
+	patterns := []Pattern{
+		{Str: "aBcd", ID: 16777216 + 1, Flags: Caseless},
+		{Str: "mno", ID: 31, Flags: SingleMatch},
+		{Str: "uv", ID: 31, Flags: SingleMatch},
+		{Str: "sdffd", ID: 32, Flags: SingleMatch},
+	}
+	for _, p := range patterns {
+		if err := ac.AddPattern(p); err != nil {
+			t.Fatalf("AddPattern(%+v) failed: %v", p, err)
+		}
+	}
+	ac.Build()
+	r := make(map[uint]struct{})
+	m := MatchedHandler(func(id uint, from, to uint64) error {
+		r[id] = struct{}{}
+		return nil
+	})
+	ac.Scan(v, m)
+	if len(r) != 2 {
+		t.Errorf("Expected 2 matches, got %d for text %q", len(r), v)
+	}
 }
 
 func TestAhoCorasick_Search_CaseInsensitive(t *testing.T) {
@@ -142,42 +175,67 @@ func randomString(n int) string {
 	return string(sb)
 }
 
-func BenchmarkAhoCorasickSearch5000RandomPatterns(b *testing.B) {
-	ac := NewAhoCorasick()
-	numPatterns := 50000 // Keeping this at 5000 as per current code
-	patterns := make([]string, numPatterns)
-
-	for i := range numPatterns {
-		// Generate random patterns of length between 5 and 15
-		patternLength := rand.Intn(11) + 5
-		patterns[i] = randomString(patternLength) // Uses randomString from ac_test.go
-		err := ac.AddPattern(Pattern{Str: patterns[i], ID: uint(i), Flags: Caseless})
-		if err != nil {
-			b.Fatalf("Failed to add pattern %q: %v", patterns[i], err)
-		}
-	}
-	ac.Build()
-
-	searchTextLength := 1500
-	searchText := []byte(randomString(searchTextLength))
-
-	b.ResetTimer() // Start timing after setup
-	for i := 0; i < b.N; i++ {
-		_ = ac.Search(searchText)
-	}
-}
-
 func BenchmarkAhoCorasickSearch5000FixedPatterns(b *testing.B) {
 	ac := NewAhoCorasick()
 	numPatterns := 50000
 
 	for i := 0; i < numPatterns; i++ {
 		s := fmt.Sprintf("FixedString%d", i)
-		_ = ac.AddPattern(Pattern{Str: s, ID: uint(i), Flags: Caseless})
+		_ = ac.AddPattern(Pattern{Str: s, ID: uint(i), Flags: Caseless | SingleMatch})
 	}
 	ac.Build()
 
 	// Create a text that contains patterns
+	var buffer bytes.Buffer
+	for i := 0; i < 200; i++ {
+		buffer.WriteString(fmt.Sprintf("noise_FixedString%d_data ", i%numPatterns))
+	}
+	text := buffer.Bytes()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = ac.Search(text)
+	}
+}
+
+func BenchmarkAhoCorasick_SingleMatch_Slice(b *testing.B) {
+	ac := NewAhoCorasick()
+	numPatterns := 5000
+
+	for i := 0; i < numPatterns; i++ {
+		s := fmt.Sprintf("FixedString%d", i)
+
+		_ = ac.AddPattern(Pattern{Str: s, ID: uint(i), Flags: Caseless | SingleMatch})
+	}
+	ac.Build()
+
+	var buffer bytes.Buffer
+	for i := 0; i < 200; i++ {
+		buffer.WriteString(fmt.Sprintf("noise_FixedString%d_data ", i%numPatterns))
+	}
+	text := buffer.Bytes()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = ac.Search(text)
+	}
+
+}
+
+func BenchmarkAhoCorasick_SingleMatch_Map(b *testing.B) {
+	ac := NewAhoCorasick()
+	numPatterns := 5000
+
+	for i := 0; i < numPatterns; i++ {
+		s := fmt.Sprintf("FixedString%d", i)
+		_ = ac.AddPattern(Pattern{Str: s, ID: uint(i), Flags: Caseless | SingleMatch})
+	}
+	//  Map
+	// maxSliceSize = 16 * 1024 * 1024 = 16777216
+	_ = ac.AddPattern(Pattern{Str: "FORCE_MAP_MODE", ID: 16777216 + 1, Flags: Caseless | SingleMatch})
+
+	ac.Build()
+
 	var buffer bytes.Buffer
 	for i := 0; i < 200; i++ {
 		buffer.WriteString(fmt.Sprintf("noise_FixedString%d_data ", i%numPatterns))
