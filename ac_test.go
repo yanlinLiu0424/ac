@@ -144,7 +144,7 @@ func randomString(n int) string {
 
 func BenchmarkAhoCorasickSearch5000RandomPatterns(b *testing.B) {
 	ac := NewAhoCorasick()
-	numPatterns := 5000 // Keeping this at 5000 as per current code
+	numPatterns := 50000 // Keeping this at 5000 as per current code
 	patterns := make([]string, numPatterns)
 
 	for i := range numPatterns {

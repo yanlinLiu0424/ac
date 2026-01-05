@@ -35,8 +35,10 @@ type state struct {
 }
 
 type AhoCorasick struct {
-	states []state
-	size   int // Size of the automaton
+	states         []state
+	size           int // Size of the automaton
+	maxID          uint
+	hasSingleMatch bool
 }
 
 func newState() state {
@@ -57,6 +59,7 @@ func newState() state {
 func NewAhoCorasick() *AhoCorasick {
 	ac := &AhoCorasick{
 		states: []state{newState()},
+		maxID:  0,
 	}
 	return ac
 }
@@ -74,6 +77,12 @@ func (ac *AhoCorasick) AddPattern(p Pattern) error {
 	p.strlen = len(p.Str)
 	ac.states[currentState].output = append(ac.states[currentState].output, p)
 	ac.states[currentState].isData = true
+	if p.ID > ac.maxID {
+		ac.maxID = p.ID
+	}
+	if p.Flags&SingleMatch > 0 {
+		ac.hasSingleMatch = true
+	}
 	ac.size++
 	return nil
 }
@@ -119,37 +128,86 @@ func (ac *AhoCorasick) Build() {
 
 func (ac *AhoCorasick) searchPatterns(text []byte, matched matchedPattern) {
 	currentState := 0
+	// A slice is faster if memory is acceptable. Let's use a 16MB threshold.
+	// A bool is 1 byte, so maxID can be up to ~16M.
+	const maxSliceSize = 16 * 1024 * 1024
+	useSlice := (ac.maxID + 1) <= maxSliceSize
 
-	record := map[uint]struct{}{}
-	for k, char := range text {
-		char = byte(unicode.ToLower(rune(char)))
-		for currentState != fail && ac.states[currentState].transitions[char] == fail {
-			currentState = ac.states[currentState].failure
+	if useSlice {
+		// Fast path: use a bitset for duplicate checking.
+		var record []uint64
+		if ac.hasSingleMatch {
+			record = make([]uint64, (ac.maxID/64)+1)
 		}
+		for k, char := range text {
+			char = byte(unicode.ToLower(rune(char)))
+			for currentState != fail && ac.states[currentState].transitions[char] == fail {
+				currentState = ac.states[currentState].failure
+			}
 
-		if currentState == fail {
-			currentState = 0
-			continue
-		}
-		currentState = ac.states[currentState].transitions[char]
-		if ac.states[currentState].isData {
-			for _, p := range ac.states[currentState].output {
-				if p.Flags&SingleMatch > 0 && isExisted(record, p.ID) {
-					continue
-				}
-				if p.Flags&Caseless > 0 {
-					record[p.ID] = struct{}{}
-					matched(uint64(k+1), p)
-				} else {
-					if memcmp([]byte(p.Str), text[k-p.strlen+1:], p.strlen) {
-						record[p.ID] = struct{}{}
+			if currentState == fail {
+				currentState = 0
+				continue
+			}
+			currentState = ac.states[currentState].transitions[char]
+			if ac.states[currentState].isData {
+				for _, p := range ac.states[currentState].output {
+					if p.Flags&SingleMatch > 0 {
+						idx := p.ID / 64
+						mask := uint64(1) << (p.ID % 64)
+						if record[idx]&mask != 0 {
+							continue
+						}
+						record[idx] |= mask
+					}
+
+					if p.Flags&Caseless > 0 {
 						matched(uint64(k+1), p)
+					} else {
+						if memcmp([]byte(p.Str), text[k-p.strlen+1:], p.strlen) {
+							matched(uint64(k+1), p)
+						}
+					}
+				}
+			}
+		}
+	} else {
+		// General path: use a map for sparse or large IDs.
+		var record map[uint]struct{}
+		if ac.hasSingleMatch {
+			record = make(map[uint]struct{})
+		}
+		for k, char := range text {
+			char = byte(unicode.ToLower(rune(char)))
+			for currentState != fail && ac.states[currentState].transitions[char] == fail {
+				currentState = ac.states[currentState].failure
+			}
+
+			if currentState == fail {
+				currentState = 0
+				continue
+			}
+			currentState = ac.states[currentState].transitions[char]
+			if ac.states[currentState].isData {
+				for _, p := range ac.states[currentState].output {
+					if p.Flags&SingleMatch > 0 {
+						if _, exists := record[p.ID]; exists {
+							continue
+						}
+						record[p.ID] = struct{}{}
+					}
+
+					if p.Flags&Caseless > 0 {
+						matched(uint64(k+1), p)
+					} else {
+						if memcmp([]byte(p.Str), text[k-p.strlen+1:], p.strlen) {
+							matched(uint64(k+1), p)
+						}
 					}
 				}
 			}
 		}
 	}
-
 }
 
 func (ac *AhoCorasick) Search(text []byte) []uint {
@@ -168,11 +226,6 @@ func (ac *AhoCorasick) Scan(text []byte, m MatchedHandler) {
 		}
 	})
 	ac.searchPatterns(text, h)
-}
-
-func isExisted(m map[uint]struct{}, id uint) bool {
-	_, exists := m[id]
-	return exists
 }
 
 func memcmp(a, b []byte, l int) bool {
