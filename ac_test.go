@@ -233,6 +233,7 @@ func BenchmarkAhoCorasick_SingleMatch_Slice(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
 		_, _ = ac.Search(text)
 	}

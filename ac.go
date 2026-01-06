@@ -28,32 +28,74 @@ type Pattern struct {
 }
 
 type state struct {
-	transitions [128]int32 // Stores transitions using an array
-	failure     int32      // Failure transition
-	output      []int32    // Matched patterns (indices)
-	isData      bool       // Whether this is a data node
+	trans   []uint32 // Packed char (low 8 bits) and next state (high 24 bits)
+	failure int32    // Failure transition
+	output  []int32  // Matched patterns (indices)
+	isData  bool     // Whether this is a data node
 }
 
 type AhoCorasick struct {
 	states         []state
 	patterns       []Pattern
-	size           int // Size of the automaton
+	rootTrans      [128]int32 // Cache for root transitions to optimize hot path
+	size           int        // Size of the automaton
 	maxID          uint
 	hasSingleMatch bool
 }
 
 func newState() state {
 	state := state{
-		transitions: [128]int32{},
-		failure:     fail,
-		output:      []int32{},
-		isData:      false,
-	}
-
-	for i := range len(state.transitions) {
-		state.transitions[i] = fail
+		trans:   nil,
+		failure: fail,
+		output:  []int32{},
+		isData:  false,
 	}
 	return state
+}
+
+func (s *state) get(char byte) int32 {
+	// Optimization: Use binary search for dense states (e.g. root) to avoid O(N) scan
+	if len(s.trans) > 16 {
+		l, r := 0, len(s.trans)
+		for l < r {
+			mid := (l + r) >> 1
+			if byte(s.trans[mid]) < char {
+				l = mid + 1
+			} else {
+				r = mid
+			}
+		}
+		if l < len(s.trans) && byte(s.trans[l]) == char {
+			return int32(s.trans[l] >> 8)
+		}
+		return fail
+	}
+
+	for _, t := range s.trans {
+		if byte(t) == char {
+			return int32(t >> 8)
+		}
+		// Since trans is sorted, we can exit early
+		if byte(t) > char {
+			break
+		}
+	}
+	return fail
+}
+
+func (s *state) add(char byte, next int32) {
+	packed := (uint32(next) << 8) | uint32(char)
+	// Insert in sorted order to enable binary search/early exit
+	i := 0
+	for i < len(s.trans) {
+		if byte(s.trans[i]) >= char {
+			break
+		}
+		i++
+	}
+	s.trans = append(s.trans, 0)
+	copy(s.trans[i+1:], s.trans[i:])
+	s.trans[i] = packed
 }
 
 func NewAhoCorasick() *AhoCorasick {
@@ -61,6 +103,9 @@ func NewAhoCorasick() *AhoCorasick {
 		states:   []state{newState()},
 		patterns: make([]Pattern, 0),
 		maxID:    0,
+	}
+	for i := range ac.rootTrans {
+		ac.rootTrans[i] = int32(fail)
 	}
 	return ac
 }
@@ -71,12 +116,17 @@ func (ac *AhoCorasick) AddPattern(p Pattern) error {
 		if char >= 128 {
 			return fmt.Errorf("pattern contains non-ASCII character: %c", char)
 		}
-		if ac.states[currentState].transitions[char] == fail {
+		next := ac.states[currentState].get(byte(char))
+		if next == int32(fail) {
 			newstate := len(ac.states)
 			ac.states = append(ac.states, newState())
-			ac.states[currentState].transitions[char] = int32(newstate)
+			ac.states[currentState].add(byte(char), int32(newstate))
+			if currentState == 0 {
+				ac.rootTrans[char] = int32(newstate)
+			}
+			next = int32(newstate)
 		}
-		currentState = int(ac.states[currentState].transitions[char])
+		currentState = int(next)
 	}
 	p.strlen = len(p.Str)
 	ac.patterns = append(ac.patterns, p)
@@ -96,31 +146,30 @@ func (ac *AhoCorasick) AddPattern(p Pattern) error {
 func (ac *AhoCorasick) Build() {
 	queue := []int{}
 
-	for _, state := range ac.states[0].transitions {
-		if state != fail {
-			ac.states[int(state)].failure = 0
-			queue = append(queue, int(state))
-		}
+	for _, t := range ac.states[0].trans {
+		state := int32(t >> 8)
+		ac.states[int(state)].failure = 0
+		queue = append(queue, int(state))
 	}
 
 	for len(queue) > 0 {
 		currentState := queue[0]
 		queue = queue[1:]
 
-		for char, nextState32 := range ac.states[currentState].transitions {
-			if nextState32 == fail {
-				continue
-			}
+		for _, t := range ac.states[currentState].trans {
+			char := byte(t)
+			nextState32 := int32(t >> 8)
+
 			nextState := int(nextState32)
 			queue = append(queue, nextState)
 
 			failState := int(ac.states[currentState].failure)
-			for failState != fail && ac.states[failState].transitions[char] == fail {
+			for failState != fail && ac.states[failState].get(char) == int32(fail) {
 				failState = int(ac.states[failState].failure)
 			}
 
 			if failState != fail {
-				ac.states[nextState].failure = ac.states[failState].transitions[char]
+				ac.states[nextState].failure = ac.states[failState].get(char)
 			} else {
 				ac.states[nextState].failure = 0
 			}
@@ -150,7 +199,16 @@ func (ac *AhoCorasick) searchPatterns(text []byte, matched matchedPattern) error
 				return fmt.Errorf("text contains non-ASCII character: %c", char)
 			}
 			char = toLower(char)
-			for currentState != fail && ac.states[currentState].transitions[char] == fail {
+			var next int32
+			for currentState != fail {
+				if currentState == 0 {
+					next = ac.rootTrans[char]
+				} else {
+					next = ac.states[currentState].get(char)
+				}
+				if next != int32(fail) {
+					break
+				}
 				currentState = ac.states[currentState].failure
 			}
 
@@ -158,7 +216,7 @@ func (ac *AhoCorasick) searchPatterns(text []byte, matched matchedPattern) error
 				currentState = 0
 				continue
 			}
-			currentState = ac.states[currentState].transitions[char]
+			currentState = next
 			if ac.states[currentState].isData {
 				for _, pidx := range ac.states[currentState].output {
 					p := ac.patterns[pidx]
@@ -198,7 +256,16 @@ func (ac *AhoCorasick) searchPatterns(text []byte, matched matchedPattern) error
 				return fmt.Errorf("text contains non-ASCII character: %c", char)
 			}
 			char = toLower(char)
-			for currentState != fail && ac.states[currentState].transitions[char] == fail {
+			var next int32
+			for currentState != fail {
+				if currentState == 0 {
+					next = ac.rootTrans[char]
+				} else {
+					next = ac.states[currentState].get(char)
+				}
+				if next != int32(fail) {
+					break
+				}
 				currentState = ac.states[currentState].failure
 			}
 
@@ -206,7 +273,7 @@ func (ac *AhoCorasick) searchPatterns(text []byte, matched matchedPattern) error
 				currentState = 0
 				continue
 			}
-			currentState = ac.states[currentState].transitions[char]
+			currentState = next
 			if ac.states[currentState].isData {
 				for _, pidx := range ac.states[currentState].output {
 					p := ac.patterns[pidx]
