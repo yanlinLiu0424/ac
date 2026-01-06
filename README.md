@@ -27,7 +27,7 @@ package main
 import (
 	"fmt"
 	"log"
-	"github.com/yanlinLiu0424/ac/ac"
+	"github.com/yanlinLiu0424/ac"
 )
 
 func main() {
