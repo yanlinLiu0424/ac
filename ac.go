@@ -105,7 +105,7 @@ func NewAhoCorasick() *AhoCorasick {
 		maxID:    0,
 	}
 	for i := range ac.rootTrans {
-		ac.rootTrans[i] = int32(fail)
+		ac.rootTrans[i] = fail
 	}
 	return ac
 }
@@ -117,7 +117,7 @@ func (ac *AhoCorasick) AddPattern(p Pattern) error {
 			return fmt.Errorf("pattern contains non-ASCII character: %c", char)
 		}
 		next := ac.states[currentState].get(byte(char))
-		if next == int32(fail) {
+		if next == fail {
 			newstate := len(ac.states)
 			ac.states = append(ac.states, newState())
 			ac.states[currentState].add(byte(char), int32(newstate))
@@ -144,6 +144,24 @@ func (ac *AhoCorasick) AddPattern(p Pattern) error {
 }
 
 func (ac *AhoCorasick) Build() {
+	// Optimization: Compact trans slices into a single contiguous array.
+	// This improves cache locality by reducing pointer chasing to scattered heap memory.
+	totalTrans := 0
+	for i := range ac.states {
+		totalTrans += len(ac.states[i].trans)
+	}
+	if totalTrans > 0 {
+		allTrans := make([]uint32, 0, totalTrans)
+		for i := range ac.states {
+			if len(ac.states[i].trans) > 0 {
+				start := len(allTrans)
+				allTrans = append(allTrans, ac.states[i].trans...)
+				// Use 3-index slicing to set capacity = length, ensuring safety
+				ac.states[i].trans = allTrans[start:len(allTrans):len(allTrans)]
+			}
+		}
+	}
+
 	queue := []int{}
 
 	for _, t := range ac.states[0].trans {
@@ -164,7 +182,7 @@ func (ac *AhoCorasick) Build() {
 			queue = append(queue, nextState)
 
 			failState := int(ac.states[currentState].failure)
-			for failState != fail && ac.states[failState].get(char) == int32(fail) {
+			for failState != fail && ac.states[failState].get(char) == fail {
 				failState = int(ac.states[failState].failure)
 			}
 
@@ -180,10 +198,27 @@ func (ac *AhoCorasick) Build() {
 
 		}
 	}
+
+	// Optimization: Compact output slices at the end of Build.
+	// Outputs are populated during Build, so we must do this after the queue processing.
+	totalOutput := 0
+	for i := range ac.states {
+		totalOutput += len(ac.states[i].output)
+	}
+	if totalOutput > 0 {
+		allOutput := make([]int32, 0, totalOutput)
+		for i := range ac.states {
+			if len(ac.states[i].output) > 0 {
+				start := len(allOutput)
+				allOutput = append(allOutput, ac.states[i].output...)
+				ac.states[i].output = allOutput[start:len(allOutput):len(allOutput)]
+			}
+		}
+	}
 }
 
 func (ac *AhoCorasick) searchPatterns(text []byte, matched matchedPattern) error {
-	currentState := int32(0)
+	currentState := 0
 	// A slice is faster if memory is acceptable. Let's use a 16MB threshold.
 	// A bool is 1 byte, so maxID can be up to ~16M.
 	const maxSliceSize = 16 * 1024 * 1024
@@ -206,17 +241,17 @@ func (ac *AhoCorasick) searchPatterns(text []byte, matched matchedPattern) error
 				} else {
 					next = ac.states[currentState].get(char)
 				}
-				if next != int32(fail) {
+				if next != fail {
 					break
 				}
-				currentState = ac.states[currentState].failure
+				currentState = int(ac.states[currentState].failure)
 			}
 
 			if currentState == fail {
 				currentState = 0
 				continue
 			}
-			currentState = next
+			currentState = int(next)
 			if ac.states[currentState].isData {
 				for _, pidx := range ac.states[currentState].output {
 					p := ac.patterns[pidx]
@@ -263,17 +298,17 @@ func (ac *AhoCorasick) searchPatterns(text []byte, matched matchedPattern) error
 				} else {
 					next = ac.states[currentState].get(char)
 				}
-				if next != int32(fail) {
+				if next != fail {
 					break
 				}
-				currentState = ac.states[currentState].failure
+				currentState = int(ac.states[currentState].failure)
 			}
 
 			if currentState == fail {
 				currentState = 0
 				continue
 			}
-			currentState = next
+			currentState = int(next)
 			if ac.states[currentState].isData {
 				for _, pidx := range ac.states[currentState].output {
 					p := ac.patterns[pidx]
