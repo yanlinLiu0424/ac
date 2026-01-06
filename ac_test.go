@@ -28,9 +28,12 @@ func TestAhoCorasick_Search_CaseInsensitive1(t *testing.T) {
 		r[id] = struct{}{}
 		return nil
 	})
-	ac.Scan(v, m)
+	err := ac.Scan(v, m)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(r) != 2 {
-		t.Errorf("Expected 2 matches, got %d for text %q", len(r), v)
+		t.Fatalf("Expected 2 matches, got %d for text %q", len(r), v)
 	}
 }
 
@@ -54,7 +57,10 @@ func TestAhoCorasick_Search_CaseInsensitive2(t *testing.T) {
 		r[id] = struct{}{}
 		return nil
 	})
-	ac.Scan(v, m)
+	err := ac.Scan(v, m)
+	if err != nil {
+		t.Error(err)
+	}
 	if len(r) != 2 {
 		t.Errorf("Expected 2 matches, got %d for text %q", len(r), v)
 	}
@@ -77,7 +83,10 @@ func TestAhoCorasick_Search_CaseInsensitive(t *testing.T) {
 	}
 	ac.Build()
 
-	r := ac.Search(v)
+	r, err := ac.Search(v)
+	if err != nil {
+		t.Error(err)
+	}
 	if len(r) != 4 {
 		t.Errorf("Expected 4 matches, got %d for text %q", len(r), v)
 	}
@@ -99,7 +108,10 @@ func TestAhoCorasick_Search_CaseSensitive(t *testing.T) {
 		}
 	}
 	ac.Build()
-	r := ac.Search(v)
+	r, err := ac.Search(v)
+	if err != nil {
+		t.Error(err)
+	}
 	if len(r) != 3 {
 		t.Errorf("Expected 2 matches, got %d for text %q. Matches: %v", len(r), v, r)
 	}
@@ -151,8 +163,10 @@ func TestAhoCorasick_1000Patterns(t *testing.T) {
 	ac.Build()
 
 	text := sbText.Bytes()
-	matches := ac.Search(text)
-
+	matches, err := ac.Search(text)
+	if err != nil {
+		t.Error(err)
+	}
 	foundIDs := make(map[uint]bool)
 	for _, id := range matches {
 		foundIDs[id] = true
@@ -194,7 +208,8 @@ func BenchmarkAhoCorasickSearch5000FixedPatterns(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = ac.Search(text)
+		_, _ = ac.Search(text)
+
 	}
 }
 
@@ -217,7 +232,7 @@ func BenchmarkAhoCorasick_SingleMatch_Slice(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = ac.Search(text)
+		_, _ = ac.Search(text)
 	}
 
 }
@@ -244,6 +259,6 @@ func BenchmarkAhoCorasick_SingleMatch_Map(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = ac.Search(text)
+		_, _ = ac.Search(text)
 	}
 }

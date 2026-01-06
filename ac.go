@@ -6,7 +6,7 @@ import (
 )
 
 type MatchedHandler func(id uint, from, to uint64) error
-type matchedPattern func(pos uint64, ps Pattern)
+type matchedPattern func(pos uint64, ps Pattern) error
 
 const (
 	fail = -1
@@ -126,7 +126,7 @@ func (ac *AhoCorasick) Build() {
 	}
 }
 
-func (ac *AhoCorasick) searchPatterns(text []byte, matched matchedPattern) {
+func (ac *AhoCorasick) searchPatterns(text []byte, matched matchedPattern) error {
 	currentState := 0
 	// A slice is faster if memory is acceptable. Let's use a 16MB threshold.
 	// A bool is 1 byte, so maxID can be up to ~16M.
@@ -161,10 +161,16 @@ func (ac *AhoCorasick) searchPatterns(text []byte, matched matchedPattern) {
 					}
 
 					if p.Flags&Caseless > 0 {
-						matched(uint64(k+1), p)
+						err := matched(uint64(k+1), p)
+						if err != nil {
+							return err
+						}
 					} else {
 						if memcmp([]byte(p.Str), text[k-p.strlen+1:], p.strlen) {
-							matched(uint64(k+1), p)
+							err := matched(uint64(k+1), p)
+							if err != nil {
+								return err
+							}
 						}
 					}
 				}
@@ -197,34 +203,50 @@ func (ac *AhoCorasick) searchPatterns(text []byte, matched matchedPattern) {
 					}
 
 					if p.Flags&Caseless > 0 {
-						matched(uint64(k+1), p)
+						err := matched(uint64(k+1), p)
+						if err != nil {
+							return err
+						}
 					} else {
 						if memcmp([]byte(p.Str), text[k-p.strlen+1:], p.strlen) {
-							matched(uint64(k+1), p)
+							err := matched(uint64(k+1), p)
+							if err != nil {
+								return err
+							}
 						}
 					}
 				}
 			}
 		}
 	}
+	return nil
 }
 
-func (ac *AhoCorasick) Search(text []byte) []uint {
+func (ac *AhoCorasick) Search(text []byte) ([]uint, error) {
 	matches := make([]uint, 0, ac.size)
-	h := matchedPattern(func(pos uint64, ps Pattern) {
+	h := func(pos uint64, ps Pattern) error {
 		matches = append(matches, ps.ID)
-	})
-	ac.searchPatterns(text, h)
-	return matches
+		return nil
+	}
+	err := ac.searchPatterns(text, h)
+	if err != nil {
+		return nil, err
+	}
+	return matches, nil
 }
-func (ac *AhoCorasick) Scan(text []byte, m MatchedHandler) {
-	h := matchedPattern(func(pos uint64, ps Pattern) {
+func (ac *AhoCorasick) Scan(text []byte, m MatchedHandler) error {
+	h := func(pos uint64, ps Pattern) error {
 		err := m(ps.ID, 0, pos)
 		if err != nil {
-			return
+			return err
 		}
-	})
-	ac.searchPatterns(text, h)
+		return nil
+	}
+	err := ac.searchPatterns(text, h)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func memcmp(a, b []byte, l int) bool {
