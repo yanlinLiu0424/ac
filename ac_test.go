@@ -134,7 +134,7 @@ func TestAhoCorasick_Search_CaseSensitive(t *testing.T) {
 
 func TestAhoCorasick_1000Patterns(t *testing.T) {
 	ac := NewAhoCorasick()
-	expectedIDs := make(map[uint]bool)
+	expectedIDs := make(map[uint]bool, 1000)
 	var sbText bytes.Buffer
 
 	// Generate 100 patterns and build the text
@@ -167,7 +167,7 @@ func TestAhoCorasick_1000Patterns(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	foundIDs := make(map[uint]bool)
+	foundIDs := make(map[uint]bool, len(matches))
 	for _, id := range matches {
 		foundIDs[id] = true
 	}
@@ -206,10 +206,11 @@ func BenchmarkAhoCorasickSearch5000FixedPatterns(b *testing.B) {
 	}
 	text := buffer.Bytes()
 
+	b.ReportAllocs()
 	b.ResetTimer()
+	handler := MatchedHandler(func(id uint, from, to uint64) error { return nil })
 	for i := 0; i < b.N; i++ {
-		_, _ = ac.Search(text)
-
+		_ = ac.Scan(text, handler)
 	}
 }
 
@@ -230,6 +231,7 @@ func BenchmarkAhoCorasick_SingleMatch_Slice(b *testing.B) {
 	}
 	text := buffer.Bytes()
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = ac.Search(text)
@@ -256,8 +258,9 @@ func BenchmarkAhoCorasick_SingleMatch_Map(b *testing.B) {
 		buffer.WriteString(fmt.Sprintf("noise_FixedString%d_data ", i%numPatterns))
 	}
 	text := buffer.Bytes()
-
+	b.ReportAllocs()
 	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
 		_, _ = ac.Search(text)
 	}

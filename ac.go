@@ -28,15 +28,15 @@ type Pattern struct {
 }
 
 type state struct {
-	transitions     [128]int  // Stores transitions using an array
-	failure         int       // Failure transition
-	output          []Pattern // Matched patterns
-	caseInsensitive bool      // Whether case-insensitive matching is enabled
-	isData          bool      // Whether this is a data node
+	transitions [128]int32 // Stores transitions using an array
+	failure     int32      // Failure transition
+	output      []int32    // Matched patterns (indices)
+	isData      bool       // Whether this is a data node
 }
 
 type AhoCorasick struct {
 	states         []state
+	patterns       []Pattern
 	size           int // Size of the automaton
 	maxID          uint
 	hasSingleMatch bool
@@ -44,11 +44,10 @@ type AhoCorasick struct {
 
 func newState() state {
 	state := state{
-		transitions:     [128]int{},
-		failure:         fail,
-		output:          []Pattern{},
-		caseInsensitive: false,
-		isData:          false,
+		transitions: [128]int32{},
+		failure:     fail,
+		output:      []int32{},
+		isData:      false,
 	}
 
 	for i := range len(state.transitions) {
@@ -59,8 +58,9 @@ func newState() state {
 
 func NewAhoCorasick() *AhoCorasick {
 	ac := &AhoCorasick{
-		states: []state{newState()},
-		maxID:  0,
+		states:   []state{newState()},
+		patterns: make([]Pattern, 0),
+		maxID:    0,
 	}
 	return ac
 }
@@ -74,12 +74,14 @@ func (ac *AhoCorasick) AddPattern(p Pattern) error {
 		if ac.states[currentState].transitions[char] == fail {
 			newstate := len(ac.states)
 			ac.states = append(ac.states, newState())
-			ac.states[currentState].transitions[char] = newstate
+			ac.states[currentState].transitions[char] = int32(newstate)
 		}
-		currentState = ac.states[currentState].transitions[char]
+		currentState = int(ac.states[currentState].transitions[char])
 	}
 	p.strlen = len(p.Str)
-	ac.states[currentState].output = append(ac.states[currentState].output, p)
+	ac.patterns = append(ac.patterns, p)
+	pidx := int32(len(ac.patterns) - 1)
+	ac.states[currentState].output = append(ac.states[currentState].output, pidx)
 	ac.states[currentState].isData = true
 	if p.ID > ac.maxID {
 		ac.maxID = p.ID
@@ -96,8 +98,8 @@ func (ac *AhoCorasick) Build() {
 
 	for _, state := range ac.states[0].transitions {
 		if state != fail {
-			ac.states[state].failure = 0
-			queue = append(queue, state)
+			ac.states[int(state)].failure = 0
+			queue = append(queue, int(state))
 		}
 	}
 
@@ -105,15 +107,16 @@ func (ac *AhoCorasick) Build() {
 		currentState := queue[0]
 		queue = queue[1:]
 
-		for char, nextState := range ac.states[currentState].transitions {
-			if nextState == fail {
+		for char, nextState32 := range ac.states[currentState].transitions {
+			if nextState32 == fail {
 				continue
 			}
+			nextState := int(nextState32)
 			queue = append(queue, nextState)
 
-			failState := ac.states[currentState].failure
+			failState := int(ac.states[currentState].failure)
 			for failState != fail && ac.states[failState].transitions[char] == fail {
-				failState = ac.states[failState].failure
+				failState = int(ac.states[failState].failure)
 			}
 
 			if failState != fail {
@@ -123,7 +126,7 @@ func (ac *AhoCorasick) Build() {
 			}
 
 			if ac.states[nextState].isData {
-				ac.states[nextState].output = append(ac.states[nextState].output, ac.states[ac.states[nextState].failure].output...)
+				ac.states[nextState].output = append(ac.states[nextState].output, ac.states[int(ac.states[nextState].failure)].output...)
 			}
 
 		}
@@ -131,7 +134,7 @@ func (ac *AhoCorasick) Build() {
 }
 
 func (ac *AhoCorasick) searchPatterns(text []byte, matched matchedPattern) error {
-	currentState := 0
+	currentState := int32(0)
 	// A slice is faster if memory is acceptable. Let's use a 16MB threshold.
 	// A bool is 1 byte, so maxID can be up to ~16M.
 	const maxSliceSize = 16 * 1024 * 1024
@@ -157,7 +160,8 @@ func (ac *AhoCorasick) searchPatterns(text []byte, matched matchedPattern) error
 			}
 			currentState = ac.states[currentState].transitions[char]
 			if ac.states[currentState].isData {
-				for _, p := range ac.states[currentState].output {
+				for _, pidx := range ac.states[currentState].output {
+					p := ac.patterns[pidx]
 					if p.Flags&SingleMatch > 0 {
 						idx := p.ID / 64
 						mask := uint64(1) << (p.ID % 64)
@@ -204,7 +208,8 @@ func (ac *AhoCorasick) searchPatterns(text []byte, matched matchedPattern) error
 			}
 			currentState = ac.states[currentState].transitions[char]
 			if ac.states[currentState].isData {
-				for _, p := range ac.states[currentState].output {
+				for _, pidx := range ac.states[currentState].output {
+					p := ac.patterns[pidx]
 					if p.Flags&SingleMatch > 0 {
 						if _, exists := record[p.ID]; exists {
 							continue
