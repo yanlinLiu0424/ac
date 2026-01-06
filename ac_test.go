@@ -221,7 +221,7 @@ func BenchmarkAhoCorasick_SingleMatch_Slice(b *testing.B) {
 	for i := 0; i < numPatterns; i++ {
 		s := fmt.Sprintf("FixedString%d", i)
 
-		_ = ac.AddPattern(Pattern{Str: s, ID: uint(i), Flags: Caseless | SingleMatch})
+		_ = ac.AddPattern(Pattern{Str: s, ID: uint(i)})
 	}
 	ac.Build()
 
@@ -235,7 +235,7 @@ func BenchmarkAhoCorasick_SingleMatch_Slice(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, _ = ac.Search(text)
+		_ = ac.Scan(text, func(id uint, from, to uint64) error { return nil })
 	}
 
 }
@@ -246,11 +246,11 @@ func BenchmarkAhoCorasick_SingleMatch_Map(b *testing.B) {
 
 	for i := 0; i < numPatterns; i++ {
 		s := fmt.Sprintf("FixedString%d", i)
-		_ = ac.AddPattern(Pattern{Str: s, ID: uint(i), Flags: Caseless | SingleMatch})
+		_ = ac.AddPattern(Pattern{Str: s, ID: uint(i), Flags: Caseless})
 	}
 	//  Map
 	// maxSliceSize = 16 * 1024 * 1024 = 16777216
-	_ = ac.AddPattern(Pattern{Str: "FORCE_MAP_MODE", ID: 16777216 + 1, Flags: Caseless | SingleMatch})
+	_ = ac.AddPattern(Pattern{Str: "FORCE_MAP_MODE", ID: 16777216 + 1, Flags: Caseless})
 
 	ac.Build()
 
@@ -258,11 +258,12 @@ func BenchmarkAhoCorasick_SingleMatch_Map(b *testing.B) {
 	for i := 0; i < 200; i++ {
 		buffer.WriteString(fmt.Sprintf("noise_FixedString%d_data ", i%numPatterns))
 	}
+	buffer.WriteString("FORCE_MAP_MODE")
 	text := buffer.Bytes()
 	b.ReportAllocs()
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, _ = ac.Search(text)
+		_ = ac.Scan(text, func(id uint, from, to uint64) error { return nil })
 	}
 }
