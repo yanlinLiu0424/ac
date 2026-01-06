@@ -67,4 +67,4 @@ err := acInstance.Scan(text, func(id uint, from, to uint64) error {
 
 ## Notes
 
-- **Character Set Limitation**: The current implementation uses a `[256]int` array to store state transitions, so it primarily supports **ASCII characters**. If a Pattern contains non-ASCII characters (e.g., Chinese), it may cause the program to panic.
+- **Character Set Limitation**: The current implementation uses a `[128]int` array to store state transitions, so it strictly supports **ASCII characters** (0-127). If a Pattern or text contains non-ASCII characters, the methods will return an error.

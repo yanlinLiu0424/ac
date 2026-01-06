@@ -2,6 +2,7 @@ package ac
 
 import (
 	"bytes"
+	"fmt"
 	"unicode"
 )
 
@@ -27,7 +28,7 @@ type Pattern struct {
 }
 
 type state struct {
-	transitions     [256]int  // Stores transitions using an array
+	transitions     [128]int  // Stores transitions using an array
 	failure         int       // Failure transition
 	output          []Pattern // Matched patterns
 	caseInsensitive bool      // Whether case-insensitive matching is enabled
@@ -43,7 +44,7 @@ type AhoCorasick struct {
 
 func newState() state {
 	state := state{
-		transitions:     [256]int{},
+		transitions:     [128]int{},
 		failure:         fail,
 		output:          []Pattern{},
 		caseInsensitive: false,
@@ -67,6 +68,9 @@ func (ac *AhoCorasick) AddPattern(p Pattern) error {
 	currentState := 0
 	for _, char := range p.Str {
 		char = unicode.ToLower(char)
+		if char >= 128 {
+			return fmt.Errorf("pattern contains non-ASCII character: %c", char)
+		}
 		if ac.states[currentState].transitions[char] == fail {
 			newstate := len(ac.states)
 			ac.states = append(ac.states, newState())
@@ -139,7 +143,10 @@ func (ac *AhoCorasick) searchPatterns(text []byte, matched matchedPattern) error
 			record = make([]uint64, (ac.maxID/64)+1)
 		}
 		for k, char := range text {
-			char = byte(unicode.ToLower(rune(char)))
+			if char >= 128 {
+				return fmt.Errorf("text contains non-ASCII character: %c", char)
+			}
+			char = toLower(char)
 			for currentState != fail && ac.states[currentState].transitions[char] == fail {
 				currentState = ac.states[currentState].failure
 			}
@@ -183,7 +190,10 @@ func (ac *AhoCorasick) searchPatterns(text []byte, matched matchedPattern) error
 			record = make(map[uint]struct{})
 		}
 		for k, char := range text {
-			char = byte(unicode.ToLower(rune(char)))
+			if char >= 128 {
+				return fmt.Errorf("text contains non-ASCII character: %c", char)
+			}
+			char = toLower(char)
 			for currentState != fail && ac.states[currentState].transitions[char] == fail {
 				currentState = ac.states[currentState].failure
 			}
@@ -254,4 +264,11 @@ func memcmp(a, b []byte, l int) bool {
 		return false
 	}
 	return bytes.Equal(a[:l], b[:l])
+}
+
+func toLower(b byte) byte {
+	if b >= 'A' && b <= 'Z' {
+		return b + 32
+	}
+	return b
 }
