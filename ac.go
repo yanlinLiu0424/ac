@@ -83,16 +83,20 @@ func (s *state) get(char byte) int32 {
 	return fail
 }
 
+// acd
 func (s *state) add(char byte, next int32) {
 	packed := (uint32(next) << 8) | uint32(char)
 	// Insert in sorted order to enable binary search/early exit
-	i := 0
-	for i < len(s.trans) {
-		if byte(s.trans[i]) >= char {
-			break
+	l, r := 0, len(s.trans)
+	for l < r {
+		mid := (l + r) >> 1
+		if byte(s.trans[mid]) < char {
+			l = mid + 1
+		} else {
+			r = mid
 		}
-		i++
 	}
+	i := l
 	s.trans = append(s.trans, 0)
 	copy(s.trans[i+1:], s.trans[i:])
 	s.trans[i] = packed

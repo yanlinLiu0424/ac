@@ -267,3 +267,30 @@ func BenchmarkAhoCorasick_SingleMatch_Map(b *testing.B) {
 		_ = ac.Scan(text, func(id uint, from, to uint64) error { return nil })
 	}
 }
+
+func BenchmarkAhoCorasick_Random100000Patterns(b *testing.B) {
+	ac := NewAhoCorasick()
+	numPatterns := 100000
+	patterns := make([]string, 0, numPatterns)
+
+	for i := 0; i < numPatterns; i++ {
+		s := randomString(15)
+		patterns = append(patterns, s)
+		_ = ac.AddPattern(Pattern{Str: s, ID: uint(i)})
+	}
+	ac.Build()
+
+	var buffer bytes.Buffer
+	for i := 0; i < 100; i++ {
+		buffer.WriteString(randomString(10))
+		buffer.WriteString(patterns[rand.Intn(numPatterns)])
+	}
+	text := buffer.Bytes()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		_ = ac.Scan(text, func(id uint, from, to uint64) error { return nil })
+	}
+}
