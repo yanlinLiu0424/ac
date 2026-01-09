@@ -3,7 +3,6 @@ package ac
 import (
 	"bytes"
 	"fmt"
-	"unicode"
 )
 
 type MatchedHandler func(id uint, from, to uint64) error
@@ -21,10 +20,10 @@ const (
 )
 
 type Pattern struct {
-	Str    string
-	ID     uint // ID
-	Flags  Flag // Caseless represents set case-insensitive matching.
-	strlen int
+	Content []byte
+	ID      uint // ID
+	Flags   Flag // Caseless represents set case-insensitive matching.
+	strlen  int
 }
 
 type state struct {
@@ -115,8 +114,8 @@ func NewAhoCorasick() *AhoCorasick {
 }
 func (ac *AhoCorasick) AddPattern(p Pattern) error {
 	currentState := 0
-	for _, char := range p.Str {
-		char = unicode.ToLower(char)
+	for _, char := range p.Content {
+		char = toLower(char)
 		if char >= 128 {
 			return fmt.Errorf("pattern contains non-ASCII character: %c", char)
 		}
@@ -132,7 +131,7 @@ func (ac *AhoCorasick) AddPattern(p Pattern) error {
 		}
 		currentState = int(next)
 	}
-	p.strlen = len(p.Str)
+	p.strlen = len(p.Content)
 	ac.patterns = append(ac.patterns, p)
 	pidx := int32(len(ac.patterns) - 1)
 	ac.states[currentState].output = append(ac.states[currentState].output, pidx)
@@ -274,7 +273,7 @@ func (ac *AhoCorasick) searchPatterns(text []byte, matched matchedPattern) error
 							return err
 						}
 					} else {
-						if memcmp([]byte(p.Str), text[k-p.strlen+1:], p.strlen) {
+						if memcmp([]byte(p.Content), text[k-p.strlen+1:], p.strlen) {
 							err := matched(uint64(k+1), p)
 							if err != nil {
 								return err
@@ -329,7 +328,7 @@ func (ac *AhoCorasick) searchPatterns(text []byte, matched matchedPattern) error
 							return err
 						}
 					} else {
-						if memcmp([]byte(p.Str), text[k-p.strlen+1:], p.strlen) {
+						if memcmp([]byte(p.Content), text[k-p.strlen+1:], p.strlen) {
 							err := matched(uint64(k+1), p)
 							if err != nil {
 								return err

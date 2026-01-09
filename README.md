@@ -1,25 +1,32 @@
-# Aho-Corasick (AC) Library
+# AC (Aho-Corasick)
 
-This is an efficient Go implementation of the Aho-Corasick string matching algorithm. It supports multi-pattern matching and provides features such as case-insensitive matching and single-match mode for various use cases.
+Package `ac` provides high-performance implementations of the Aho-Corasick string matching algorithm in Go. It is designed for efficient multi-pattern searching with support for ASCII text.
+
+The package includes two variants:
+
+### 1. Standard Aho-Corasick (`AhoCorasick`)
+*   **Mechanism**: Uses a classic Trie structure with failure links. Transitions are handled via sparse lookups (e.g., binary search).
+*   **Pros**: Memory-efficient and fast build time.
+*   **Cons**: Search involves traversing failure links, which can be slower than a DFA approach.
+*   **Best For**: Large pattern sets where memory footprint is a constraint.
+
+### 2. Ken Steele Variant (`ACKS`)
+*   **Mechanism**: Flattens the state machine into a dense Deterministic Finite Automaton (DFA) table. It pre-calculates the next state for every possible input character.
+*   **Optimization**: Uses **Alphabet Compression** to map only used ASCII characters to dense indices, reducing the table size.
+*   **Pros**: Extremely fast, deterministic **O(1)** search speed per input byte.
+*   **Cons**: Higher memory usage and slower build time due to the dense table construction.
+*   **Best For**: High-throughput applications where search speed is the priority.
 
 ## Features
 
-- **Multi-pattern Matching**: Search for multiple pattern strings in a single pass.
-- **Case-insensitive**: Supports case-insensitive matching by setting the `Caseless` flag.
-- **Single Match**: Supports reporting only one match per pattern ID within the same text by setting the `SingleMatch` flag (deduplication).
-- **Automatic Performance Optimization**: Automatically selects between Slice (Bitset) or Map to track matching states based on the range of Pattern IDs, achieving optimal balance between performance and memory.
-
-## Installation
-
-```bash
-go get github.com/yanlinLiu0424/ac
-```
+*   **Case-Insensitive Matching**: Support for ASCII case-insensitive matching via the `Caseless` flag.
+*   **Single Match Mode**: Option to report a pattern ID only the first time it is found using the `SingleMatch` flag.
+*   **Zero-Allocation Scan**: The `Scan` method allows processing matches via a callback handler, avoiding memory allocations for result slices.
+*   **ASCII Optimized**: Explicitly checks and optimizes for ASCII input (returns error for non-ASCII bytes).
 
 ## Usage
 
-### 1. Basic Search
-
-The `Search` method returns a list of all matched Pattern IDs.
+### Basic Search
 
 ```go
 package main
@@ -27,44 +34,56 @@ package main
 import (
 	"fmt"
 	"log"
-	"github.com/yanlinLiu0424/ac"
+
+	"github.com/yanlinLiu0424/ac" // Replace with your actual import path
 )
 
 func main() {
-	// 1. Create AC instance
-	acInstance := ac.NewAhoCorasick()
+	// 1. Initialize the matcher
+	// Use NewACKS() for the DFA variant (faster search)
+	// or NewAhoCorasick() for the standard variant.
+	matcher := ac.NewACKS()
 
-	// 2. Add Patterns
-	// Supports setting ID and Flags
-	acInstance.AddPattern(ac.Pattern{Str: "apple", ID: 1, Flags: ac.Caseless})
-	acInstance.AddPattern(ac.Pattern{Str: "banana", ID: 2})
+	// 2. Add patterns
+	// IDs must be non-zero.
+	_ = matcher.AddPattern(ac.Pattern{
+		Content: []byte("he"),
+		ID:      1,
+	})
+	_ = matcher.AddPattern(ac.Pattern{
+		Content: []byte("she"),
+		ID:      2,
+	})
+	_ = matcher.AddPattern(ac.Pattern{
+		Content: []byte("HIS"),
+		ID:      3,
+		Flags:   ac.Caseless, // Case-insensitive match
+	})
 
-	// 3. Build Automaton
-	acInstance.Build()
+	// 3. Build the automaton
+	matcher.Build()
 
-	// 4. Search
-	text := []byte("I like Apple and banana")
-	matches, err := acInstance.Search(text)
+	// 4. Search in text
+	text := []byte("ushers his")
+
+	// Option A: Get all match IDs
+	matches, err := matcher.Search(text)
 	if err != nil {
 		log.Fatal(err)
 	}
+	fmt.Println("Matches:", matches)
 
-	fmt.Println("Matched IDs:", matches)
-	// Output might be: [1 2] (Order depends on match position)
+	// Option B: Scan with callback (Zero allocation)
+	err = matcher.Scan(text, func(id uint, from, to uint64) error {
+		fmt.Printf("Pattern %d found ending at %d\n", id, to)
+		return nil
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 ```
 
-### 2. Scan Details
+## Performance
 
-The `Scan` method allows processing each match event via a callback function, suitable for streaming processing or retrieving match positions.
-
-```go
-err := acInstance.Scan(text, func(id uint, from, to uint64) error {
-	fmt.Printf("Found pattern ID %d ending at position %d\n", id, to)
-	return nil
-})
-```
-
-## Notes
-
-- **Character Set Limitation**: The current implementation is optimized for **ASCII characters** (0-127) using a memory-efficient sparse transition table. If a Pattern or text contains non-ASCII characters, the methods will return an error.
+Benchmarks are included in the test files. `ACKS` generally outperforms `AhoCorasick` in search throughput due to its branch-free state transition logic, making it ideal for read-heavy workloads. `AhoCorasick` is a robust alternative when memory usage or build time is a primary concern.
