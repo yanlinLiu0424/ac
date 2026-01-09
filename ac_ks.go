@@ -1,8 +1,30 @@
 package ac
 
 import (
+	"bytes"
 	"fmt"
 )
+
+type MatchedHandler func(id uint, from, to uint64) error
+type matchedPattern func(pos uint64, ps Pattern) error
+
+const (
+	fail = -1
+)
+
+type Flag uint
+
+const (
+	Caseless Flag = 1 << iota // Caseless represents set case-insensitive matching.
+	SingleMatch
+)
+
+type Pattern struct {
+	Content []byte
+	ID      uint // ID
+	Flags   Flag // Caseless represents set case-insensitive matching.
+	strlen  int
+}
 
 // ACKS represents the Aho-Corasick Ken Steele matcher
 type ACKS struct {
@@ -88,6 +110,7 @@ func (ac *ACKS) buildStateMachine() {
 	ac.stateCount = 1 // State 0 is root
 
 	// Initialize output table for state 0
+	ac.outputTable = make([][]int, 0)
 	ac.outputTable = append(ac.outputTable, []int{})
 
 	// 1. Build Trie (Goto)
@@ -284,4 +307,18 @@ func (ac *ACKS) searchPatterns(text []byte, matched matchedPattern) error {
 		}
 	}
 	return nil
+}
+
+func memcmp(a, b []byte, l int) bool {
+	if l > len(b) || l > len(a) {
+		return false
+	}
+	return bytes.Equal(a[:l], b[:l])
+}
+
+func toLower(b byte) byte {
+	if b >= 'A' && b <= 'Z' {
+		return b + 32
+	}
+	return b
 }
