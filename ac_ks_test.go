@@ -120,9 +120,9 @@ func sortSlice(s []uint) {
 func BenchmarkACKS_Search_FixedPatterns(b *testing.B) {
 	ac := NewACKS()
 	numPatterns := 50000
-	for i := 1; i < numPatterns; i++ {
+	for i := 0; i < numPatterns; i++ {
 		s := fmt.Sprintf("FixedString%d", i)
-		_ = ac.AddPattern(mkPat(s, uint(i), Caseless))
+		_ = ac.AddPattern(mkPat(s, uint(i+1), Caseless))
 	}
 	ac.Build()
 
@@ -147,7 +147,7 @@ func BenchmarkACKS_Search_RandomPatterns(b *testing.B) {
 	for i := 0; i < numPatterns; i++ {
 		s := randomString(10)
 		patterns = append(patterns, s)
-		_ = ac.AddPattern(mkPat(s, uint(i), 0))
+		_ = ac.AddPattern(mkPat(s, uint(i+1), 0))
 	}
 	ac.Build()
 
@@ -164,4 +164,14 @@ func BenchmarkACKS_Search_RandomPatterns(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_ = ac.Scan(text, handler)
 	}
+}
+
+const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+func randomString(n int) string {
+	sb := make([]byte, n)
+	for i := range sb {
+		sb[i] = charset[rand.Intn(len(charset))]
+	}
+	return string(sb)
 }
