@@ -1,5 +1,9 @@
 package ac
 
+import (
+	"fmt"
+)
+
 // ACKS represents the Aho-Corasick Ken Steele matcher
 type ACKS struct {
 	patterns       []Pattern
@@ -11,31 +15,37 @@ type ACKS struct {
 
 	// outputTable stores pattern IDs for each state.
 	// Using a slice of slices for O(1) access by state index.
-	outputTable [][]uint
-
-	// Map to quickly find pattern by ID during verification
-	patternIdxMap map[uint]int
-
-	stateCount int
+	outputTable    [][]int
+	size           int
+	maxID          uint
+	stateCount     int
+	hasSingleMatch bool
 }
 
 func NewACKS() *ACKS {
 	return &ACKS{
-		outputTable:   make([][]uint, 0),
-		patternIdxMap: make(map[uint]int),
+		outputTable: make([][]int, 0),
 	}
 }
 
-func (ac *ACKS) AddPattern(content []byte, id uint, flags Flag) {
-	ac.patterns = append(ac.patterns, Pattern{
-		ID:      id,
-		Content: content,
-		Flags:   flags,
-	})
-	ac.patternIdxMap[id] = len(ac.patterns) - 1
+func (ac *ACKS) AddPattern(p Pattern) error {
+	if p.ID == 0 {
+		return fmt.Errorf("pattern ID cannot be 0")
+	}
+	p.strlen = len(p.Content)
+	ac.patterns = append(ac.patterns, p)
+
+	if p.Flags&SingleMatch > 0 {
+		ac.hasSingleMatch = true
+	}
+	ac.size = len(ac.patterns)
+	if p.ID > ac.maxID {
+		ac.maxID = p.ID
+	}
+	return nil
 }
 
-func (ac *ACKS) Compile() {
+func (ac *ACKS) Build() {
 	ac.initTranslateTable()
 	ac.buildStateMachine()
 }
@@ -78,10 +88,10 @@ func (ac *ACKS) buildStateMachine() {
 	ac.stateCount = 1 // State 0 is root
 
 	// Initialize output table for state 0
-	ac.outputTable = append(ac.outputTable, []uint{})
+	ac.outputTable = append(ac.outputTable, []int{})
 
 	// 1. Build Trie (Goto)
-	for _, p := range ac.patterns {
+	for k, p := range ac.patterns {
 		currentState := 0
 		for _, b := range p.Content {
 			// Use the compressed character code
@@ -98,11 +108,11 @@ func (ac *ACKS) buildStateMachine() {
 				ac.stateCount++
 				trie[currentState][tc] = newState
 				// Expand output table
-				ac.outputTable = append(ac.outputTable, []uint{})
+				ac.outputTable = append(ac.outputTable, []int{})
 				currentState = newState
 			}
 		}
-		ac.outputTable[currentState] = append(ac.outputTable[currentState], p.ID)
+		ac.outputTable[currentState] = append(ac.outputTable[currentState], k)
 	}
 
 	// 2. Build Failure Table
@@ -179,11 +189,54 @@ func (ac *ACKS) buildStateMachine() {
 	}
 }
 
-func (ac *ACKS) Search(text []byte) map[uint][]int {
-	matches := make(map[uint][]int)
+func (ac *ACKS) Search(text []byte) ([]uint, error) {
+	matches := make([]uint, 0, ac.size)
+	h := func(pos uint64, ps Pattern) error {
+		matches = append(matches, ps.ID)
+		return nil
+	}
+	err := ac.searchPatterns(text, h)
+	if err != nil {
+		return nil, err
+	}
+	return matches, nil
+}
+
+func (ac *ACKS) Scan(text []byte, m MatchedHandler) error {
+	h := func(pos uint64, ps Pattern) error {
+		err := m(ps.ID, 0, pos)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+	err := ac.searchPatterns(text, h)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (ac *ACKS) searchPatterns(text []byte, matched matchedPattern) error {
 	currentState := 0
+	const maxSliceSize = 16 * 1024 * 1024
+	useSlice := ac.maxID <= maxSliceSize
+
+	var recordSlice []uint64
+	var recordMap map[uint]struct{}
+
+	if ac.hasSingleMatch {
+		if useSlice {
+			recordSlice = make([]uint64, (ac.maxID/64)+1)
+		} else {
+			recordMap = make(map[uint]struct{})
+		}
+	}
 
 	for i, b := range text {
+		if b >= 128 {
+			return fmt.Errorf("text contains non-ASCII character: %c", b)
+		}
 		tc := ac.translateTable[b]
 
 		// O(1) transition
@@ -196,53 +249,39 @@ func (ac *ACKS) Search(text []byte) map[uint][]int {
 
 		// Check outputs
 		if len(ac.outputTable[currentState]) > 0 {
-			for _, pid := range ac.outputTable[currentState] {
-				// Verification step
-				idx, ok := ac.patternIdxMap[pid]
-				if !ok {
-					continue
+			for _, id := range ac.outputTable[currentState] {
+				pat := &ac.patterns[id]
+				if pat.Flags&SingleMatch > 0 {
+					if useSlice {
+						idx := pat.ID / 64
+						mask := uint64(1) << (pat.ID % 64)
+						if recordSlice[idx]&mask != 0 {
+							continue
+						}
+						recordSlice[idx] |= mask
+					} else {
+						if _, exists := recordMap[pat.ID]; exists {
+							continue
+						}
+						recordMap[pat.ID] = struct{}{}
+					}
 				}
-				pat := &ac.patterns[idx]
 
-				patLen := len(pat.Content)
-				startIdx := i - patLen + 1
-
-				if startIdx < 0 {
-					continue
-				}
-
-				candidate := text[startIdx : i+1]
-
-				matched := false
 				if pat.Flags&Caseless > 0 {
-					// Case-insensitive comparison
-					if stringEqualFold(candidate, pat.Content) {
-						matched = true
+					err := matched(uint64(i+1), *pat)
+					if err != nil {
+						return err
 					}
 				} else {
-					// Exact match
-					if string(candidate) == string(pat.Content) {
-						matched = true
+					if memcmp(pat.Content, text[i-pat.strlen+1:], pat.strlen) {
+						err := matched(uint64(i+1), *pat)
+						if err != nil {
+							return err
+						}
 					}
-				}
-
-				if matched {
-					matches[pid] = append(matches[pid], i)
 				}
 			}
 		}
 	}
-	return matches
-}
-
-func stringEqualFold(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := 0; i < len(a); i++ {
-		if toLower(a[i]) != toLower(b[i]) {
-			return false
-		}
-	}
-	return true
+	return nil
 }

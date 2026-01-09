@@ -216,7 +216,7 @@ func BenchmarkAhoCorasickSearch5000FixedPatterns(b *testing.B) {
 
 func BenchmarkAhoCorasick_SingleMatch_Slice(b *testing.B) {
 	ac := NewAhoCorasick()
-	numPatterns := 50000
+	numPatterns := 500000
 
 	for i := 0; i < numPatterns; i++ {
 		s := fmt.Sprintf("FixedString%d", i)
